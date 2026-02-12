@@ -211,6 +211,9 @@ void main() {
       final envContent = File(p.join(tempDir.path, 'fastlane', '.env.default'))
           .readAsStringSync();
       expect(envContent, contains('FIREBASE_PROJECT_ID=demo-project'));
+      final pubspecContent =
+          File(p.join(tempDir.path, 'pubspec.yaml')).readAsStringSync();
+      expect(pubspecContent, contains('firebase_core:'));
       expect(logs.join('\n'), contains('Init complete'));
     });
 
@@ -361,6 +364,44 @@ void main() {
       final envContent = File(p.join(tempDir.path, 'fastlane', '.env.default'))
           .readAsStringSync();
       expect(envContent, contains('FIREBASE_PROJECT_ID=second-project'));
+    });
+
+    test('firebase-sync supports create-new option from project selection menu',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'fl_config_fb_select_create_',
+      );
+      addTearDown(() async => tempDir.delete(recursive: true));
+
+      cli = FastlaneConfiguratorCli(
+        out: logs.add,
+        err: errors.add,
+        processRunner: _mockProcessRunnerSelectCreateProject(),
+        promptReader: _mockPromptReader(<String>[
+          '0',
+          'menu-created-project',
+          'Menu Created Project',
+        ]),
+      );
+
+      final code = await cli.run(<String>[
+        'firebase-sync',
+        '--project-root',
+        tempDir.path,
+        '--overwrite',
+      ]);
+
+      expect(code, 0);
+      expect(errors, isEmpty);
+      expect(logs.join('\n'), contains('0) Create new Firebase project'));
+      expect(
+        logs.join('\n'),
+        contains('Creating Firebase project "menu-created-project"'),
+      );
+      expect(
+        File(p.join(tempDir.path, '.firebaserc')).readAsStringSync(),
+        contains('"default": "menu-created-project"'),
+      );
     });
   });
 }
@@ -764,6 +805,122 @@ ProcessRunner _mockProcessRunnerSelectExistingProject() {
                 'platform': 'IOS',
                 'displayName': 'iOS Selected',
                 'bundleId': 'com.example.selected',
+              },
+            ],
+          }),
+          '',
+        );
+      }
+    }
+
+    if (executable == 'flutterfire' &&
+        arguments.length >= 4 &&
+        arguments.first == 'configure') {
+      return ProcessResult(1, 0, 'flutterfire configured', '');
+    }
+
+    if (executable == 'git') {
+      return ProcessResult(1, 1, '', 'not a git repository');
+    }
+
+    return ProcessResult(1, 1, '', 'command not mocked');
+  };
+}
+
+ProcessRunner _mockProcessRunnerSelectCreateProject() {
+  var projectCreated = false;
+
+  return (
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+  }) async {
+    if (executable == 'firebase') {
+      if (arguments.length >= 2 &&
+          arguments.first == 'login:list' &&
+          arguments[1] == '--json') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': <Map<String, String>>[
+              <String, String>{'user': 'tester@example.com'},
+            ],
+          }),
+          '',
+        );
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'use' &&
+          arguments[1] == '--json') {
+        return ProcessResult(1, 1, '', 'No active Firebase project');
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'projects:create' &&
+          arguments[1] == 'menu-created-project') {
+        projectCreated = true;
+        return ProcessResult(1, 0, 'Project created', '');
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'use' &&
+          arguments[1] == 'menu-created-project') {
+        return ProcessResult(
+            1, 0, 'Now using project menu-created-project', '');
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'projects:list') {
+        final projects = <Map<String, String>>[
+          <String, String>{
+            'projectId': 'existing-project',
+            'projectNumber': '333333333',
+            'displayName': 'Existing Project',
+          },
+          <String, String>{
+            'projectId': 'existing-project-2',
+            'projectNumber': '333333334',
+            'displayName': 'Existing Project 2',
+          },
+        ];
+        if (projectCreated) {
+          projects.add(<String, String>{
+            'projectId': 'menu-created-project',
+            'projectNumber': '444444444',
+            'displayName': 'Menu Created Project',
+          });
+        }
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': projects,
+          }),
+          '',
+        );
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'apps:list') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': <Map<String, String>>[
+              <String, String>{
+                'appId': '1:444:android:menu',
+                'platform': 'ANDROID',
+                'displayName': 'Android Menu',
+                'packageName': 'com.example.menu',
+              },
+              <String, String>{
+                'appId': '1:444:ios:menu',
+                'platform': 'IOS',
+                'displayName': 'iOS Menu',
+                'bundleId': 'com.example.menu',
               },
             ],
           }),

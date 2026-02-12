@@ -1,135 +1,157 @@
 # fastlane_configurator
 
-`fastlane_configurator` is a Dart CLI package that bootstraps Fastlane configuration for Flutter projects.
+`fastlane_configurator` is a Dart CLI package that bootstraps Fastlane + Firebase + GitHub Actions for Flutter projects.
 
-It provides ready commands to:
+It can:
 
-- generate Fastlane files (`Fastfile`, `Appfile`, `.env.default`, `Pluginfile`)
-- generate GitHub Actions workflow for Android/iOS CI delivery
-- fetch project/git/GitHub metadata into JSON for CI and release automation
-- wire Firebase App Distribution lanes directly
+- generate Fastlane files (`Fastfile`, `Appfile`, `Pluginfile`, `.env.default`)
+- generate GitHub Actions workflow for Android/iOS
+- fetch project/git/GitHub metadata JSON
+- sync Firebase app/project data into your project files
+- run Firebase login and FlutterFire configuration automatically
 
 ## Install
-
-### Global CLI install
 
 ```bash
 dart pub global activate fastlane_configurator
 ```
 
-If needed, add pub global binaries to your PATH:
+If needed:
 
 ```bash
 export PATH="$PATH:$HOME/.pub-cache/bin"
 ```
 
-## Use this package as an executable
-
-Fastest usage after install:
+## Use As Executable
 
 ```bash
 fastlane_configurator --help
-```
-
-Short alias:
-
-```bash
 flc --help
-```
-
-Run without global install:
-
-```bash
 dart run fastlane_configurator:fastlane_configurator --help
 ```
 
-## Commands
+## Quick Start
 
-### 1) One-shot init (recommended)
-
-Use this after install to prepare everything automatically:
+Use this single command from your Flutter project root:
 
 ```bash
-flc init --project-root . --firebase-project your-firebase-project-id --overwrite
+flc init --project-root . --overwrite
 ```
 
-This single command does:
+`init` runs:
 
-- `setup` (Fastlane + workflow files)
-- `firebase-sync` (fetch from Firebase CLI and auto-inject values)
-- `fetch-data` (project metadata JSON for CI)
+1. `setup`
+2. `firebase-sync`
+3. `fetch-data`
 
-### 2) Setup project delivery files only
+## Command Reference
+
+### `init`
+
+One command setup for everything.
 
 ```bash
-fastlane_configurator setup --project-root . --overwrite
-# or:
+flc init --project-root . --overwrite
+```
+
+Common flags:
+
+- `--project-root <path>`: override target project directory
+- `--overwrite`: replace generated files if changed
+- `--firebase-project <project-id>`: use explicit Firebase project id
+- `--firebase-output-path <path>`: firebase JSON output path
+- `--output-path <path>`: build metadata JSON output path
+- `--no-include-github`: skip GitHub API metadata
+- `--firebase-optional`: do not fail hard if Firebase is not available
+
+### `setup`
+
+Generate Fastlane and workflow files only.
+
+```bash
 flc setup --project-root . --overwrite
 ```
 
-Generated files:
+Common flags:
+
+- `--no-ci`
+- `--no-env`
+- `--workflow-filename mobile_delivery.yml`
+- `--ci-branch main`
+- `--ios-bundle-id <bundle-id>`
+- `--android-package-name <package-name>`
+- `--apple-id <email>`
+- `--team-id <team-id>`
+- `--itc-team-id <itc-team-id>`
+
+### `firebase-sync`
+
+Fetch Firebase metadata, update env, and configure Firebase integration.
+
+```bash
+flc firebase-sync --project-root . --overwrite
+```
+
+Common flags:
+
+- `--firebase-project <project-id>`
+- `--output-path fastlane/firebase_data.json`
+- `--env-path fastlane/.env.default`
+- `--no-update-env`
+- `--overwrite`
+- `--optional`
+
+### `fetch-data`
+
+Write project/git/GitHub metadata to JSON.
+
+```bash
+flc fetch-data --project-root . --output-path fastlane/build_data.json --include-github
+```
+
+Common flags:
+
+- `--project-root <path>`
+- `--output-path <path>`
+- `--include-github` / `--no-include-github`
+- `--github-repository owner/repo`
+- `--github-token <token>`
+
+## Firebase Interactive Flow
+
+When running `init` or `firebase-sync`:
+
+1. Checks Firebase login (`firebase login:list`), then runs `firebase login` if needed.
+2. Resolves project id from:
+   - `--firebase-project`
+   - environment (`FIREBASE_PROJECT_ID` / `GCLOUD_PROJECT`)
+   - active Firebase target (`firebase use --json`)
+3. If no project is linked, it lists your Firebase projects and prompts:
+   - select existing project
+   - or choose `0) Create new Firebase project`
+4. If selected project id is invalid/not found, it can create a new one.
+5. Links project locally (`.firebaserc` + `firebase use <projectId>`).
+6. Checks `pubspec.yaml` for `firebase_core`:
+   - if exists, continues
+   - if missing, adds it automatically (`flutter pub add firebase_core`), with fallback file update
+7. Runs `flutterfire configure --project <projectId> --yes`.
+8. Writes:
+   - `fastlane/firebase_data.json`
+   - updates `fastlane/.env.default`
+
+## Generated/Updated Files
 
 - `fastlane/Fastfile`
 - `fastlane/Appfile`
 - `fastlane/Pluginfile`
 - `fastlane/.env.default`
 - `.github/workflows/mobile_delivery.yml`
-
-Useful setup flags:
-
-- `--no-ci` skip workflow generation
-- `--no-env` skip `.env.default` generation
-- `--ci-branch main` set workflow push branch
-- `--workflow-filename mobile_delivery.yml` customize workflow filename
-- `--ios-bundle-id com.example.app` manual override
-- `--android-package-name com.example.app` manual override
-
-### 3) Firebase sync (auto-fetch + auto-inject)
-
-```bash
-flc firebase-sync --project-root . --firebase-project your-firebase-project-id --overwrite
-```
-
-This creates:
-
 - `fastlane/firebase_data.json`
+- `fastlane/build_data.json`
+- `.firebaserc` (when Firebase project is linked)
+- `pubspec.yaml` (adds `firebase_core` if missing)
 
-And updates automatically:
-
-- `fastlane/.env.default`
-  - `FIREBASE_PROJECT_ID`
-  - `FIREBASE_APP_ID_ANDROID`
-  - `FIREBASE_APP_ID_IOS`
-  - `FASTLANE_ANDROID_PACKAGE_NAME`
-  - `FASTLANE_APP_IDENTIFIER`
-
-If Firebase CLI is not configured yet and you want to skip hard failure:
-
-```bash
-flc firebase-sync --project-root . --optional
-```
-
-If the local project is not connected to Firebase yet, `firebase-sync` now
-auto-connects it by setting `.firebaserc` default project and retrying.
-
-### 4) Fetch metadata for CI
-
-```bash
-fastlane_configurator fetch-data --project-root . --output-path fastlane/build_data.json --include-github
-# or:
-flc fetch-data --project-root . --output-path fastlane/build_data.json --include-github
-```
-
-This writes a JSON file with:
-
-- app package name and version
-- inferred iOS/Android identifiers
-- git branch/sha/tag
-- optional GitHub latest release/workflow run
-
-Use `--no-include-github` to skip GitHub API calls.
-
-## Required environment variables for generated lanes/workflow
+## Required Env Vars For CI Lanes
 
 - `FIREBASE_TOKEN`
 - `FIREBASE_PROJECT_ID`

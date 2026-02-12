@@ -589,6 +589,8 @@ ${commandParser.usage}
       optional: true,
     );
 
+    await _ensureFirebaseCoreDependency(projectRoot: projectRoot);
+
     await _runFlutterfireConfigure(
       projectRoot: projectRoot,
       projectId: resolvedProject,
@@ -1097,6 +1099,7 @@ ${commandParser.usage}
     }
 
     _out('Select Firebase project to use:');
+    _out('0) Create new Firebase project');
     for (var i = 0; i < projects.length; i++) {
       final project = projects[i];
       final projectId = project['projectId']!;
@@ -1108,11 +1111,34 @@ ${commandParser.usage}
 
     final answer = _stringValue(
       _promptReader(
-        'Enter project number or project id (leave empty to skip): ',
+        'Enter project number, project id, or 0 to create new (leave empty to skip): ',
       ),
     );
     if (answer == null) {
       return null;
+    }
+
+    final normalizedAnswer = answer.toLowerCase();
+    if (normalizedAnswer == '0' ||
+        normalizedAnswer == 'new' ||
+        normalizedAnswer == 'create') {
+      final suggestedProjectId = _suggestFirebaseProjectId(projectRoot);
+      final enteredProjectId = _stringValue(
+        _promptReader('Firebase project id [$suggestedProjectId]: '),
+      );
+      final projectId = enteredProjectId ?? suggestedProjectId;
+
+      final suggestedDisplayName = _suggestFirebaseDisplayName(projectRoot);
+      final enteredDisplayName = _stringValue(
+        _promptReader('Firebase display name [$suggestedDisplayName]: '),
+      );
+      final displayName = enteredDisplayName ?? suggestedDisplayName;
+      await _createFirebaseProject(
+        projectRoot: projectRoot,
+        projectId: projectId,
+        displayName: displayName,
+      );
+      return projectId;
     }
 
     final index = int.tryParse(answer);
@@ -1194,6 +1220,96 @@ ${commandParser.usage}
     }
 
     return projects;
+  }
+
+  Future<void> _ensureFirebaseCoreDependency({
+    required String projectRoot,
+  }) async {
+    final pubspecFile = File(p.join(projectRoot, 'pubspec.yaml'));
+    if (!pubspecFile.existsSync()) {
+      return;
+    }
+
+    final currentContent = pubspecFile.readAsStringSync();
+    if (_pubspecHasFirebaseCoreDependency(currentContent)) {
+      _out('firebase_core already exists in pubspec.yaml');
+      return;
+    }
+
+    _out('firebase_core not found in pubspec.yaml. Adding dependency...');
+
+    final flutterAdd = await _runCommand(
+      'flutter',
+      const <String>['pub', 'add', 'firebase_core'],
+      projectRoot,
+      optional: true,
+    );
+    if (flutterAdd != null && flutterAdd.exitCode == 0) {
+      _out('Added firebase_core using "flutter pub add firebase_core".');
+      return;
+    }
+
+    final dartAdd = await _runCommand(
+      'dart',
+      const <String>['pub', 'add', 'firebase_core'],
+      projectRoot,
+      optional: true,
+    );
+    if (dartAdd != null && dartAdd.exitCode == 0) {
+      _out('Added firebase_core using "dart pub add firebase_core".');
+      return;
+    }
+
+    final fallbackContent =
+        _insertFirebaseCoreDependencyFallback(currentContent);
+    if (fallbackContent == currentContent) {
+      _err(
+        'Unable to add firebase_core automatically. '
+        'Run "flutter pub add firebase_core" manually.',
+      );
+      return;
+    }
+
+    pubspecFile.writeAsStringSync(fallbackContent);
+    _out('Added firebase_core to pubspec.yaml using file fallback.');
+  }
+
+  bool _pubspecHasFirebaseCoreDependency(String content) {
+    try {
+      final decoded = loadYaml(content);
+      if (decoded is YamlMap) {
+        final dependencies = decoded['dependencies'];
+        if (dependencies is YamlMap &&
+            dependencies.containsKey('firebase_core')) {
+          return true;
+        }
+      }
+    } catch (_) {
+      // Fall back to regex check for malformed YAML files.
+    }
+
+    return RegExp(
+      r'^\s*firebase_core\s*:',
+      multiLine: true,
+    ).hasMatch(content);
+  }
+
+  String _insertFirebaseCoreDependencyFallback(String content) {
+    final lines = content.split('\n');
+    final dependenciesIndex = lines
+        .indexWhere((line) => RegExp(r'^\s*dependencies:\s*$').hasMatch(line));
+
+    if (dependenciesIndex != -1) {
+      lines.insert(dependenciesIndex + 1, '  firebase_core: any');
+      return '${lines.join('\n').trimRight()}\n';
+    }
+
+    final normalized = content.trimRight();
+    if (normalized.isEmpty) {
+      return 'dependencies:\n  firebase_core: any\n';
+    }
+
+    return '$normalized\n\ndependencies:\n  firebase_core: any\n';
   }
 
   bool _looksLikePlaceholderFirebaseProject(String value) {
