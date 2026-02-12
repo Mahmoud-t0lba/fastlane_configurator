@@ -251,6 +251,47 @@ void main() {
         isTrue,
       );
     });
+
+    test('firebase-sync asks permission and creates project when missing',
+        () async {
+      final tempDir =
+          await Directory.systemTemp.createTemp('fl_config_fb_create_');
+      addTearDown(() async => tempDir.delete(recursive: true));
+
+      cli = FastlaneConfiguratorCli(
+        out: logs.add,
+        err: errors.add,
+        processRunner: _mockProcessRunnerCreateProject(),
+        promptReader: _mockPromptReader(<String>[
+          'yes',
+          'created-firebase-project',
+          'Created Firebase Project',
+        ]),
+      );
+
+      final code = await cli.run(<String>[
+        'firebase-sync',
+        '--project-root',
+        tempDir.path,
+        '--overwrite',
+      ]);
+
+      expect(code, 0);
+      expect(errors, isEmpty);
+      expect(
+        logs.join('\n'),
+        contains('Creating Firebase project "created-firebase-project"'),
+      );
+      expect(
+        File(p.join(tempDir.path, '.firebaserc')).readAsStringSync(),
+        contains('"default": "created-firebase-project"'),
+      );
+
+      final envContent = File(p.join(tempDir.path, 'fastlane', '.env.default'))
+          .readAsStringSync();
+      expect(
+          envContent, contains('FIREBASE_PROJECT_ID=created-firebase-project'));
+    });
   });
 }
 
@@ -267,6 +308,32 @@ ProcessRunner _mockProcessRunner() {
     String? workingDirectory,
   }) async {
     if (executable == 'firebase') {
+      if (arguments.length >= 2 &&
+          arguments.first == 'login:list' &&
+          arguments[1] == '--json') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': <Map<String, String>>[
+              <String, String>{'user': 'tester@example.com'},
+            ],
+          }),
+          '',
+        );
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'login') {
+        return ProcessResult(1, 0, 'Login complete', '');
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'use' &&
+          arguments[1] == 'demo-project') {
+        return ProcessResult(1, 0, 'Now using project demo-project', '');
+      }
+
       if (arguments.isNotEmpty && arguments.first == 'apps:list') {
         return ProcessResult(
             1,
@@ -320,6 +387,12 @@ ProcessRunner _mockProcessRunner() {
       }
     }
 
+    if (executable == 'flutterfire' &&
+        arguments.length >= 4 &&
+        arguments.first == 'configure') {
+      return ProcessResult(1, 0, 'flutterfire configured', '');
+    }
+
     if (executable == 'git') {
       return ProcessResult(1, 1, '', 'not a git repository');
     }
@@ -337,6 +410,26 @@ ProcessRunner _mockProcessRunnerReconnectFirstFailure() {
     String? workingDirectory,
   }) async {
     if (executable == 'firebase') {
+      if (arguments.length >= 2 &&
+          arguments.first == 'login:list' &&
+          arguments[1] == '--json') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': <Map<String, String>>[
+              <String, String>{'user': 'tester@example.com'},
+            ],
+          }),
+          '',
+        );
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'login') {
+        return ProcessResult(1, 0, 'Login complete', '');
+      }
+
       if (arguments.length >= 2 &&
           arguments.first == 'use' &&
           arguments[1] == 'demo-project') {
@@ -407,10 +500,127 @@ ProcessRunner _mockProcessRunnerReconnectFirstFailure() {
       }
     }
 
+    if (executable == 'flutterfire' &&
+        arguments.length >= 4 &&
+        arguments.first == 'configure') {
+      return ProcessResult(1, 0, 'flutterfire configured', '');
+    }
+
     if (executable == 'git') {
       return ProcessResult(1, 1, '', 'not a git repository');
     }
 
     return ProcessResult(1, 1, '', 'command not mocked');
+  };
+}
+
+ProcessRunner _mockProcessRunnerCreateProject() {
+  return (
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+  }) async {
+    if (executable == 'firebase') {
+      if (arguments.length >= 2 &&
+          arguments.first == 'login:list' &&
+          arguments[1] == '--json') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': <Map<String, String>>[
+              <String, String>{'user': 'tester@example.com'},
+            ],
+          }),
+          '',
+        );
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'use' &&
+          arguments[1] == '--json') {
+        return ProcessResult(1, 1, '', 'No active Firebase project');
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'projects:create' &&
+          arguments[1] == 'created-firebase-project') {
+        return ProcessResult(1, 0, 'Project created', '');
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'use' &&
+          arguments[1] == 'created-firebase-project') {
+        return ProcessResult(
+            1, 0, 'Now using project created-firebase-project', '');
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'apps:list') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': <Map<String, String>>[
+              <String, String>{
+                'appId': '1:999:android:xyz',
+                'platform': 'ANDROID',
+                'displayName': 'Android App',
+                'packageName': 'com.example.created',
+              },
+              <String, String>{
+                'appId': '1:999:ios:uvw',
+                'platform': 'IOS',
+                'displayName': 'iOS App',
+                'bundleId': 'com.example.created',
+              },
+            ],
+          }),
+          '',
+        );
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'projects:list') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(<String, Object?>{
+            'status': 'success',
+            'result': <Map<String, String>>[
+              <String, String>{
+                'projectId': 'created-firebase-project',
+                'projectNumber': '999999999',
+              },
+            ],
+          }),
+          '',
+        );
+      }
+    }
+
+    if (executable == 'flutterfire' &&
+        arguments.length >= 4 &&
+        arguments.first == 'configure') {
+      return ProcessResult(1, 0, 'flutterfire configured', '');
+    }
+
+    if (executable == 'git') {
+      return ProcessResult(1, 1, '', 'not a git repository');
+    }
+
+    return ProcessResult(1, 1, '', 'command not mocked');
+  };
+}
+
+PromptReader _mockPromptReader(List<String> answers) {
+  var index = 0;
+  return (String prompt) {
+    if (index >= answers.length) {
+      return null;
+    }
+    final value = answers[index];
+    index++;
+    return value;
   };
 }

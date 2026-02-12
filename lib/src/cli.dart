@@ -18,6 +18,9 @@ typedef ProcessRunner = Future<ProcessResult> Function(
   String? workingDirectory,
 });
 
+/// Prompts the user and returns one-line input.
+typedef PromptReader = String? Function(String prompt);
+
 /// CLI entrypoint for generating and syncing Fastlane/Firebase configuration.
 class FastlaneConfiguratorCli {
   /// Creates a new CLI runner.
@@ -28,6 +31,7 @@ class FastlaneConfiguratorCli {
     LineWriter? err,
     http.Client? httpClient,
     ProcessRunner? processRunner,
+    PromptReader? promptReader,
   })  : _out = out ?? ((message) => stdout.writeln(message)),
         _err = err ?? ((message) => stderr.writeln(message)),
         _httpClient = httpClient ?? http.Client(),
@@ -36,12 +40,18 @@ class FastlaneConfiguratorCli {
                   executable,
                   arguments,
                   workingDirectory: workingDirectory,
-                ));
+                )),
+        _promptReader = promptReader ??
+            ((prompt) {
+              stdout.write(prompt);
+              return stdin.readLineSync();
+            });
 
   final LineWriter _out;
   final LineWriter _err;
   final http.Client _httpClient;
   final ProcessRunner _processRunner;
+  final PromptReader _promptReader;
 
   ArgParser _buildParser() {
     final parser = ArgParser()
@@ -546,8 +556,23 @@ ${commandParser.usage}
     required bool overwrite,
     required bool optional,
   }) async {
-    final resolvedProject =
-        await _resolveFirebaseProject(projectRoot, firebaseProject);
+    final loggedIn = await _ensureFirebaseLogin(
+      projectRoot: projectRoot,
+      optional: optional,
+    );
+    if (!loggedIn) {
+      if (optional) {
+        _out('Firebase sync skipped: unable to login to Firebase CLI.');
+        return;
+      }
+      throw Exception('Unable to login to Firebase CLI.');
+    }
+
+    final resolvedProject = await _resolveOrCreateFirebaseProject(
+      projectRoot: projectRoot,
+      firebaseProject: firebaseProject,
+      optional: optional,
+    );
     if (resolvedProject == null) {
       if (optional) {
         _out('Firebase sync skipped: no Firebase project id resolved.');
@@ -559,6 +584,12 @@ ${commandParser.usage}
     }
 
     await _ensureFirebaseProjectLinked(
+      projectRoot: projectRoot,
+      projectId: resolvedProject,
+      optional: true,
+    );
+
+    await _runFlutterfireConfigure(
       projectRoot: projectRoot,
       projectId: resolvedProject,
       optional: true,
@@ -867,6 +898,220 @@ ${commandParser.usage}
       }
       rethrow;
     }
+  }
+
+  Future<bool> _ensureFirebaseLogin({
+    required String projectRoot,
+    required bool optional,
+  }) async {
+    final loginList = await _runCommand(
+      'firebase',
+      const <String>['login:list', '--json'],
+      projectRoot,
+      optional: true,
+    );
+
+    final loggedIn = _hasFirebaseLoggedInUser(loginList);
+    if (loggedIn) {
+      return true;
+    }
+
+    _out('Firebase login required. Running "firebase login"...');
+    final loginResult = await _runCommand(
+      'firebase',
+      const <String>['login'],
+      projectRoot,
+      optional: true,
+    );
+    if (loginResult == null) {
+      return false;
+    }
+
+    if (loginResult.exitCode != 0) {
+      final stderr = loginResult.stderr.toString().trim();
+      if (stderr.isNotEmpty) {
+        _err('firebase login failed: $stderr');
+      }
+      return optional ? false : false;
+    }
+
+    return true;
+  }
+
+  bool _hasFirebaseLoggedInUser(ProcessResult? loginListResult) {
+    if (loginListResult == null || loginListResult.exitCode != 0) {
+      return false;
+    }
+
+    final decoded = _decodeJsonOrEmpty(loginListResult.stdout.toString());
+    if (decoded is List) {
+      return decoded.isNotEmpty;
+    }
+    if (decoded is Map<String, dynamic>) {
+      final result = decoded['result'];
+      if (result is List && result.isNotEmpty) {
+        return true;
+      }
+      final user = decoded['user'];
+      if (user is String && user.trim().isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<String?> _resolveOrCreateFirebaseProject({
+    required String projectRoot,
+    required String? firebaseProject,
+    required bool optional,
+  }) async {
+    final resolved =
+        await _resolveFirebaseProject(projectRoot, firebaseProject);
+    if (resolved != null) {
+      return resolved;
+    }
+
+    if (optional) {
+      return null;
+    }
+
+    final allowed = _promptYesNo(
+      'No Firebase project is linked. Create a new Firebase project now? (yes/no): ',
+    );
+    if (!allowed) {
+      return null;
+    }
+
+    final suggestedProjectId = _suggestFirebaseProjectId(projectRoot);
+    final enteredProjectId = _stringValue(
+      _promptReader('Firebase project id [$suggestedProjectId]: '),
+    );
+    final projectId = enteredProjectId ?? suggestedProjectId;
+
+    final suggestedDisplayName = _suggestFirebaseDisplayName(projectRoot);
+    final enteredDisplayName = _stringValue(
+      _promptReader('Firebase display name [$suggestedDisplayName]: '),
+    );
+    final displayName = enteredDisplayName ?? suggestedDisplayName;
+
+    _out('Creating Firebase project "$projectId"...');
+    final createResult = await _runCommand(
+      'firebase',
+      <String>[
+        'projects:create',
+        projectId,
+        '--display-name',
+        displayName,
+      ],
+      projectRoot,
+      optional: false,
+    );
+    if (createResult == null || createResult.exitCode != 0) {
+      throw Exception(
+        'firebase projects:create failed: '
+        '${createResult?.stderr.toString().trim() ?? 'unknown error'}',
+      );
+    }
+
+    _out('Firebase project created: $projectId');
+    return projectId;
+  }
+
+  bool _promptYesNo(String prompt) {
+    final answer = _stringValue(_promptReader(prompt))?.toLowerCase();
+    if (answer == null) {
+      return false;
+    }
+    return answer == 'y' || answer == 'yes';
+  }
+
+  String _suggestFirebaseProjectId(String projectRoot) {
+    final appName = _readPubspecAppData(projectRoot)['name'];
+    final raw = (appName ?? 'my-firebase-project').toLowerCase();
+    final normalized = raw
+        .replaceAll(RegExp(r'[^a-z0-9-]'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    final base = normalized.isEmpty ? 'my-firebase-project' : normalized;
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final suffix = timestamp.substring(timestamp.length - 6);
+    return '$base-$suffix';
+  }
+
+  String _suggestFirebaseDisplayName(String projectRoot) {
+    final appName = _readPubspecAppData(projectRoot)['name'];
+    if (appName == null || appName.trim().isEmpty) {
+      return 'My Firebase Project';
+    }
+    return appName.trim();
+  }
+
+  Future<void> _runFlutterfireConfigure({
+    required String projectRoot,
+    required String projectId,
+    required bool optional,
+  }) async {
+    final pubspec = File(p.join(projectRoot, 'pubspec.yaml'));
+    if (!pubspec.existsSync()) {
+      return;
+    }
+
+    _out('Running flutterfire configure for project "$projectId"...');
+
+    final directRun = await _runCommand(
+      'flutterfire',
+      <String>['configure', '--project', projectId, '--yes'],
+      projectRoot,
+      optional: true,
+    );
+    if (directRun != null && directRun.exitCode == 0) {
+      _out('flutterfire configure completed.');
+      return;
+    }
+
+    final activateResult = await _runCommand(
+      'dart',
+      const <String>['pub', 'global', 'activate', 'flutterfire_cli'],
+      projectRoot,
+      optional: true,
+    );
+    if (activateResult == null || activateResult.exitCode != 0) {
+      if (!optional) {
+        throw Exception('Unable to activate flutterfire_cli.');
+      }
+      _out(
+          'Skipping flutterfire configure: flutterfire_cli activation failed.');
+      return;
+    }
+
+    final globalRun = await _runCommand(
+      'dart',
+      <String>[
+        'pub',
+        'global',
+        'run',
+        'flutterfire_cli:flutterfire',
+        'configure',
+        '--project',
+        projectId,
+        '--yes',
+      ],
+      projectRoot,
+      optional: true,
+    );
+    if (globalRun != null && globalRun.exitCode == 0) {
+      _out('flutterfire configure completed.');
+      return;
+    }
+
+    if (!optional) {
+      throw Exception('flutterfire configure failed.');
+    }
+    _out(
+      'Skipping flutterfire configure: command failed. '
+      'You can run it manually with "flutterfire configure --project $projectId".',
+    );
   }
 
   Future<String?> _resolveFirebaseProject(
