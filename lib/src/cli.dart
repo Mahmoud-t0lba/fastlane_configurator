@@ -640,6 +640,7 @@ ${commandParser.usage}
       optional: true,
     );
     await _ensureFirebaseInitializationInMain(projectRoot: projectRoot);
+    await _ensureFirebaseConfigureInIosAppDelegate(projectRoot: projectRoot);
 
     final resolvedGroupAliases = _resolveAppDistributionGroupAliases(
       envPath: envPath,
@@ -1430,6 +1431,67 @@ ${commandParser.usage}
     );
     mainFile.writeAsStringSync(content);
     _out('Added Firebase initialization to lib/main.dart');
+  }
+
+  Future<void> _ensureFirebaseConfigureInIosAppDelegate({
+    required String projectRoot,
+  }) async {
+    final appDelegateFile = File(
+      p.join(projectRoot, 'ios', 'Runner', 'AppDelegate.swift'),
+    );
+    if (!appDelegateFile.existsSync()) {
+      return;
+    }
+
+    var content = appDelegateFile.readAsStringSync();
+    final originalContent = content;
+    content = _ensureImport(content, 'import FirebaseCore');
+
+    final hasFirebaseConfigure = content.contains('FirebaseApp.configure(');
+    if (!hasFirebaseConfigure) {
+      const generatedRegistrantCall =
+          'GeneratedPluginRegistrant.register(with: self)';
+      const configureBlock = '    if FirebaseApp.app() == nil {\n'
+          '      FirebaseApp.configure()\n'
+          '    }\n';
+
+      if (content.contains(generatedRegistrantCall)) {
+        content = content.replaceFirst(
+          generatedRegistrantCall,
+          '$configureBlock    $generatedRegistrantCall',
+        );
+      } else {
+        final didFinishRegex = RegExp(
+          r'didFinishLaunchingWithOptions[\s\S]*?\)\s*->\s*Bool\s*\{',
+        );
+        final didFinishMatch = didFinishRegex.firstMatch(content);
+        if (didFinishMatch == null) {
+          _out(
+            'Could not find didFinishLaunchingWithOptions in ios/Runner/AppDelegate.swift. '
+            'Skipping Firebase configure.',
+          );
+          return;
+        }
+
+        content = content.replaceRange(
+          didFinishMatch.end,
+          didFinishMatch.end,
+          '\n$configureBlock',
+        );
+      }
+    }
+
+    if (content == originalContent) {
+      _out('Firebase configure already exists in ios/Runner/AppDelegate.swift');
+      return;
+    }
+
+    appDelegateFile.writeAsStringSync(content);
+    if (hasFirebaseConfigure) {
+      _out('Added FirebaseCore import to ios/Runner/AppDelegate.swift');
+    } else {
+      _out('Added Firebase configure to ios/Runner/AppDelegate.swift');
+    }
   }
 
   String _ensureImport(String content, String importLine) {

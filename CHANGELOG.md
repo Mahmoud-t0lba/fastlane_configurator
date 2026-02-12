@@ -1,3 +1,12 @@
+## 0.1.12
+
+- Added iOS Firebase native integration step in `firebase-sync` to patch
+  `ios/Runner/AppDelegate.swift` automatically:
+  - add `import FirebaseCore` when missing
+  - add guarded `FirebaseApp.configure()` in `didFinishLaunchingWithOptions`
+    when missing.
+- Added tests for AppDelegate integration add/no-duplicate behavior.
+
 ## 0.1.11
 
 - Updated generated Android build mode prompt to numeric choices:

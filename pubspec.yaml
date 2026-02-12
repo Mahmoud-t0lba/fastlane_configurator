@@ -1,6 +1,6 @@
 name: fastlane_cli
 description: CLI plugin that bootstraps Fastlane, Firebase App Distribution, and GitHub Actions for Flutter projects.
-version: 0.1.11
+version: 0.1.12
 homepage: https://github.com/Mahmoud-t0lba/fastlane_cli
 repository: https://github.com/Mahmoud-t0lba/fastlane_cli
 issue_tracker: https://github.com/Mahmoud-t0lba/fastlane_cli/issues

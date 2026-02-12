@@ -328,6 +328,135 @@ Future<void> main() async {
       );
     });
 
+    test(
+        'firebase-sync adds Firebase configure to iOS AppDelegate when missing',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'fl_config_fb_app_delegate_init_',
+      );
+      addTearDown(() async => tempDir.delete(recursive: true));
+
+      _writeFile(
+        p.join(tempDir.path, 'pubspec.yaml'),
+        'name: demo_app\nversion: 1.0.0+1\n',
+      );
+      _writeFile(
+        p.join(tempDir.path, 'ios', 'Runner', 'AppDelegate.swift'),
+        '''
+import Flutter
+import UIKit
+
+@main
+@objc class AppDelegate: FlutterAppDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    GeneratedPluginRegistrant.register(with: self)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+}
+''',
+      );
+
+      cli = FastlaneCli(
+        out: logs.add,
+        err: errors.add,
+        processRunner: _mockProcessRunner(),
+      );
+
+      final code = await cli.run(<String>[
+        'firebase-sync',
+        '--project-root',
+        tempDir.path,
+        '--firebase-project',
+        'demo-project',
+        '--overwrite',
+      ]);
+
+      expect(code, 0);
+      expect(errors, isEmpty);
+
+      final appDelegateContent = File(
+        p.join(tempDir.path, 'ios', 'Runner', 'AppDelegate.swift'),
+      ).readAsStringSync();
+      expect(appDelegateContent, contains('import FirebaseCore'));
+      expect(appDelegateContent, contains('FirebaseApp.configure()'));
+      expect(
+          _countOccurrences(appDelegateContent, 'FirebaseApp.configure()'), 1);
+      expect(
+        logs.join('\n'),
+        contains('Added Firebase configure to ios/Runner/AppDelegate.swift'),
+      );
+    });
+
+    test(
+        'firebase-sync does not duplicate Firebase configure in iOS AppDelegate',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'fl_config_fb_app_delegate_existing_',
+      );
+      addTearDown(() async => tempDir.delete(recursive: true));
+
+      _writeFile(
+        p.join(tempDir.path, 'pubspec.yaml'),
+        'name: demo_app\nversion: 1.0.0+1\n',
+      );
+      _writeFile(
+        p.join(tempDir.path, 'ios', 'Runner', 'AppDelegate.swift'),
+        '''
+import Flutter
+import FirebaseCore
+import UIKit
+
+@main
+@objc class AppDelegate: FlutterAppDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    if FirebaseApp.app() == nil {
+      FirebaseApp.configure()
+    }
+    GeneratedPluginRegistrant.register(with: self)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+}
+''',
+      );
+
+      cli = FastlaneCli(
+        out: logs.add,
+        err: errors.add,
+        processRunner: _mockProcessRunner(),
+      );
+
+      final code = await cli.run(<String>[
+        'firebase-sync',
+        '--project-root',
+        tempDir.path,
+        '--firebase-project',
+        'demo-project',
+        '--overwrite',
+      ]);
+
+      expect(code, 0);
+      expect(errors, isEmpty);
+
+      final appDelegateContent = File(
+        p.join(tempDir.path, 'ios', 'Runner', 'AppDelegate.swift'),
+      ).readAsStringSync();
+      expect(
+          _countOccurrences(appDelegateContent, 'FirebaseApp.configure()'), 1);
+      expect(_countOccurrences(appDelegateContent, 'import FirebaseCore'), 1);
+      expect(
+        logs.join('\n'),
+        contains(
+          'Firebase configure already exists in ios/Runner/AppDelegate.swift',
+        ),
+      );
+    });
+
     test('init runs setup + firebase-sync + fetch-data in one command',
         () async {
       final tempDir = await Directory.systemTemp.createTemp('fl_config_init_');
