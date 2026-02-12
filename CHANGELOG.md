@@ -1,3 +1,14 @@
+## 0.1.4
+
+- Added interactive Firebase project resolution for `init`/`firebase-sync`:
+  select an existing project or choose `0) Create new Firebase project`.
+- Added placeholder project-id detection (for examples like
+  `your-firebase-project-id`) with safer fallback behavior.
+- Added automatic `firebase_core` dependency check/add in `pubspec.yaml`
+  before running `flutterfire configure`.
+- Expanded README with full command reference and Firebase interactive flow.
+- Added and updated tests for project selection/create and dependency handling.
+
 ## 0.1.3
 
 - Fixed `firebase-sync` to auto-connect unlinked projects by updating `.firebaserc`
