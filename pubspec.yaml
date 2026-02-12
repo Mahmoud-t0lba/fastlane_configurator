@@ -1,6 +1,6 @@
 name: fastlane_configurator
 description: CLI plugin that bootstraps Fastlane, Firebase App Distribution, and GitHub Actions for Flutter projects.
-version: 0.1.2
+version: 0.1.3
 homepage: https://github.com/Mahmoud-t0lba/fastlane_configurator
 repository: https://github.com/Mahmoud-t0lba/fastlane_configurator
 issue_tracker: https://github.com/Mahmoud-t0lba/fastlane_configurator/issues

@@ -109,6 +109,9 @@ If Firebase CLI is not configured yet and you want to skip hard failure:
 flc firebase-sync --project-root . --optional
 ```
 
+If the local project is not connected to Firebase yet, `firebase-sync` now
+auto-connects it by setting `.firebaserc` default project and retrying.
+
 ### 4) Fetch metadata for CI
 
 ```bash

@@ -558,7 +558,13 @@ ${commandParser.usage}
       );
     }
 
-    final appsResponse = await _runCommand(
+    await _ensureFirebaseProjectLinked(
+      projectRoot: projectRoot,
+      projectId: resolvedProject,
+      optional: true,
+    );
+
+    var appsResponse = await _runCommand(
       'firebase',
       <String>['apps:list', '--project', resolvedProject, '--json'],
       projectRoot,
@@ -569,12 +575,36 @@ ${commandParser.usage}
       return;
     }
     if (appsResponse.exitCode != 0) {
+      _out(
+        'firebase apps:list failed, trying to connect Firebase project and retry...',
+      );
+      await _ensureFirebaseProjectLinked(
+        projectRoot: projectRoot,
+        projectId: resolvedProject,
+        optional: true,
+      );
+
+      final retry = await _runCommand(
+        'firebase',
+        <String>['apps:list', '--project', resolvedProject, '--json'],
+        projectRoot,
+        optional: optional,
+      );
+      if (retry == null) {
+        _out('Firebase sync skipped: Firebase CLI is unavailable.');
+        return;
+      }
+      appsResponse = retry;
+    }
+
+    if (appsResponse.exitCode != 0) {
       if (optional) {
-        _out('Firebase sync skipped: apps:list failed.');
+        _out('Firebase sync skipped: apps:list failed after retry.');
         return;
       }
       throw Exception(
-        'firebase apps:list failed: ${appsResponse.stderr.toString().trim()}',
+        'firebase apps:list failed: ${appsResponse.stderr.toString().trim()}\n'
+        'Tip: run "firebase login" then retry, or pass --firebase-project.',
       );
     }
 
@@ -755,6 +785,65 @@ ${commandParser.usage}
 
   String _resolveAbsolutePath(String projectRoot, String path) {
     return p.isAbsolute(path) ? path : p.join(projectRoot, path);
+  }
+
+  Future<void> _ensureFirebaseProjectLinked({
+    required String projectRoot,
+    required String projectId,
+    required bool optional,
+  }) async {
+    _setFirebasercDefaultProject(projectRoot, projectId);
+
+    final useResult = await _runCommand(
+      'firebase',
+      <String>['use', projectId],
+      projectRoot,
+      optional: true,
+    );
+
+    if (useResult == null) {
+      return;
+    }
+    if (useResult.exitCode != 0) {
+      final stderr = useResult.stderr.toString().trim();
+      if (stderr.isNotEmpty) {
+        _out('firebase use warning: $stderr');
+      } else if (!optional) {
+        _out('firebase use returned non-zero exit code.');
+      }
+    }
+  }
+
+  void _setFirebasercDefaultProject(String projectRoot, String projectId) {
+    final firebasercPath = p.join(projectRoot, '.firebaserc');
+    final file = File(firebasercPath);
+
+    Map<String, dynamic> root = <String, dynamic>{};
+    if (file.existsSync()) {
+      try {
+        final decoded = jsonDecode(file.readAsStringSync());
+        if (decoded is Map<String, dynamic>) {
+          root = decoded;
+        }
+      } catch (_) {
+        root = <String, dynamic>{};
+      }
+    }
+
+    final projects = <String, dynamic>{};
+    final existingProjects = root['projects'];
+    if (existingProjects is Map) {
+      existingProjects.forEach((key, value) {
+        if (key != null) {
+          projects[key.toString()] = value;
+        }
+      });
+    }
+    projects['default'] = projectId;
+    root['projects'] = projects;
+
+    const encoder = JsonEncoder.withIndent('  ');
+    file.writeAsStringSync('${encoder.convert(root)}\n');
   }
 
   Future<ProcessResult?> _runCommand(

@@ -1,3 +1,10 @@
+## 0.1.3
+
+- Fixed `firebase-sync` to auto-connect unlinked projects by updating `.firebaserc`
+  and running `firebase use <projectId>` before retrying `apps:list`.
+- Added retry flow for `firebase apps:list` with clearer error guidance.
+- Added tests covering reconnect-on-failure behavior.
+
 ## 0.1.2
 
 - Added `firebase-sync` command to fetch Firebase app/project data via Firebase CLI.

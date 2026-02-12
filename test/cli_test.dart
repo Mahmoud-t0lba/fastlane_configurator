@@ -213,6 +213,44 @@ void main() {
       expect(envContent, contains('FIREBASE_PROJECT_ID=demo-project'));
       expect(logs.join('\n'), contains('Init complete'));
     });
+
+    test('firebase-sync retries after auto-connect when first apps:list fails',
+        () async {
+      final tempDir =
+          await Directory.systemTemp.createTemp('fl_config_fb_reconnect_');
+      addTearDown(() async => tempDir.delete(recursive: true));
+
+      cli = FastlaneConfiguratorCli(
+        out: logs.add,
+        err: errors.add,
+        processRunner: _mockProcessRunnerReconnectFirstFailure(),
+      );
+
+      final code = await cli.run(<String>[
+        'firebase-sync',
+        '--project-root',
+        tempDir.path,
+        '--firebase-project',
+        'demo-project',
+        '--overwrite',
+      ]);
+
+      expect(code, 0);
+      expect(errors, isEmpty);
+      expect(
+        logs.join('\n'),
+        contains('trying to connect Firebase project and retry'),
+      );
+      expect(
+        File(p.join(tempDir.path, '.firebaserc')).readAsStringSync(),
+        contains('"default": "demo-project"'),
+      );
+      expect(
+        File(p.join(tempDir.path, 'fastlane', 'firebase_data.json'))
+            .existsSync(),
+        isTrue,
+      );
+    });
   });
 }
 
@@ -277,6 +315,93 @@ ProcessRunner _mockProcessRunner() {
           0,
           jsonEncode(
               <String, String>{'status': 'success', 'result': 'demo-project'}),
+          '',
+        );
+      }
+    }
+
+    if (executable == 'git') {
+      return ProcessResult(1, 1, '', 'not a git repository');
+    }
+
+    return ProcessResult(1, 1, '', 'command not mocked');
+  };
+}
+
+ProcessRunner _mockProcessRunnerReconnectFirstFailure() {
+  var appsListCalls = 0;
+
+  return (
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+  }) async {
+    if (executable == 'firebase') {
+      if (arguments.length >= 2 &&
+          arguments.first == 'use' &&
+          arguments[1] == 'demo-project') {
+        return ProcessResult(1, 0, 'Now using project demo-project', '');
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'apps:list') {
+        appsListCalls++;
+        if (appsListCalls == 1) {
+          return ProcessResult(
+            1,
+            1,
+            '',
+            '- Preparing the list of your Firebase apps\n'
+                '✖ Preparing the list of your Firebase apps',
+          );
+        }
+        return ProcessResult(
+            1,
+            0,
+            jsonEncode(<String, Object?>{
+              'status': 'success',
+              'result': <Map<String, String>>[
+                <String, String>{
+                  'appId': '1:123:android:abc',
+                  'platform': 'ANDROID',
+                  'displayName': 'Android App',
+                  'packageName': 'com.example.demo',
+                },
+                <String, String>{
+                  'appId': '1:123:ios:def',
+                  'platform': 'IOS',
+                  'displayName': 'iOS App',
+                  'bundleId': 'com.example.demo',
+                },
+              ],
+            }),
+            '');
+      }
+
+      if (arguments.isNotEmpty && arguments.first == 'projects:list') {
+        return ProcessResult(
+            1,
+            0,
+            jsonEncode(<String, Object?>{
+              'status': 'success',
+              'result': <Map<String, String>>[
+                <String, String>{
+                  'projectId': 'demo-project',
+                  'projectNumber': '1234567890',
+                },
+              ],
+            }),
+            '');
+      }
+
+      if (arguments.length >= 2 &&
+          arguments.first == 'use' &&
+          arguments[1] == '--json') {
+        return ProcessResult(
+          1,
+          0,
+          jsonEncode(
+            <String, String>{'status': 'success', 'result': 'demo-project'},
+          ),
           '',
         );
       }
