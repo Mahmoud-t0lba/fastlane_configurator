@@ -77,6 +77,15 @@ void main() {
       expect(fastfileContent, contains('lane :ci_ios'));
       expect(fastfileContent, contains('lane :bootstrap_cli_env'));
       expect(fastfileContent, contains('lane :apple_account_info'));
+      expect(
+        fastfileContent,
+        contains(
+            'sh("bash", "scripts/sync_cli_env.sh", "--project-root", ".."'),
+      );
+      expect(
+        fastfileContent,
+        contains('args = ["bash", "scripts/apple_account_info.sh"]'),
+      );
       expect(logs.join('\n'), contains('Setup complete'));
     });
 

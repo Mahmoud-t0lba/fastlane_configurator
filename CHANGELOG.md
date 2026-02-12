@@ -1,3 +1,9 @@
+## 0.1.9
+
+- Fixed generated Fastfile script paths for `bootstrap_cli_env` and
+  `apple_account_info` lanes so they work from the `fastlane/` working
+  directory at runtime.
+
 ## 0.1.8
 
 - Added generated `fastlane/scripts/sync_cli_env.sh` to auto-detect and inject

@@ -1952,12 +1952,12 @@ end
 
 desc "Populate fastlane/.env secrets from local CLI sessions"
 lane :bootstrap_cli_env do
-  sh("bash", "fastlane/scripts/sync_cli_env.sh", "--project-root", ".", "--env-path", "fastlane/.env")
+  sh("bash", "scripts/sync_cli_env.sh", "--project-root", "..", "--env-path", "fastlane/.env")
 end
 
 desc "Show Apple account providers/teams using altool"
 lane :apple_account_info do |options|
-  args = ["bash", "fastlane/scripts/apple_account_info.sh"]
+  args = ["bash", "scripts/apple_account_info.sh"]
   apple_id = options[:apple_id].to_s
   args += ["--apple-id", apple_id] unless apple_id.empty?
   sh(*args)
