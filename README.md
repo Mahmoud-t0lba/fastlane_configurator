@@ -1,6 +1,6 @@
-# fastlane_configurator
+# fastlane_cli
 
-`fastlane_configurator` is a Dart CLI package that bootstraps Fastlane + Firebase + GitHub Actions for Flutter projects.
+`fastlane_cli` is a Dart CLI package that bootstraps Fastlane + Firebase + GitHub Actions for Flutter projects.
 
 It can:
 
@@ -14,7 +14,7 @@ It can:
 ## Install
 
 ```bash
-dart pub global activate fastlane_configurator
+dart pub global activate fastlane_cli
 ```
 
 If needed:
@@ -26,9 +26,9 @@ export PATH="$PATH:$HOME/.pub-cache/bin"
 ## Use As Executable
 
 ```bash
-fastlane_configurator --help
+fastlane_cli --help
 flc --help
-dart run fastlane_configurator:fastlane_configurator --help
+dart run fastlane_cli:fastlane_cli --help
 ```
 
 ## Quick Start

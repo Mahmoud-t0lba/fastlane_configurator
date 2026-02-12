@@ -1,3 +1,9 @@
+## 0.1.6
+
+- Renamed package to `fastlane_cli`.
+- Renamed executable command to `fastlane_cli` while keeping `flc` alias.
+- Updated imports and examples to `package:fastlane_cli/fastlane_cli.dart`.
+
 ## 0.1.5
 
 - Added Firebase App Distribution group setup during `init`/`firebase-sync`:

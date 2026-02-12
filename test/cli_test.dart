@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fastlane_configurator/fastlane_configurator.dart';
+import 'package:fastlane_cli/fastlane_cli.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
